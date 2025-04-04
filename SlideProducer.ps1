@@ -1,7 +1,7 @@
 # SECTION: Constants
-$TYPE1 = "type1"
-$TYPE2 = "type2"
-$BOTH = "Both"
+$TYPE1 = "ŽŽŒ±Œü‚¯"
+$TYPE2 = "‰^—pŒü‚¯"
+$BOTH = "—¼•û"
 
 # SECTION: Function to Close and Release Resources
 function Close-PowerPointAndReleaseResources {
