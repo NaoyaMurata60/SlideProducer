@@ -3,11 +3,14 @@ $TYPE1 = "試験向け"
 $TYPE2 = "運用向け"
 $BOTH = "両方"
 
+# Add the required .NET assembly
+Add-Type -AssemblyName System.Windows.Forms
+
 # SECTION: Function to Close PowerPoint and Release Resources
 function Close-PowerPointAndReleaseResources {
     param (
         [Parameter(Mandatory = $true)]
-        [Microsoft.Office.Interop.PowerPoint.Application]$powerpoint,
+        $powerpoint,
         [Parameter(ValueFromRemainingArguments = $true)]
         $presentations
     )
@@ -37,19 +40,6 @@ function Close-PowerPointAndReleaseResources {
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
     [System.GC]::Collect()
-}
-
-# SECTION: Function to Clear All Slides
-function Clear-AllSlides {
-    param (
-        [Parameter(Mandatory = $true)]
-        [Microsoft.Office.Interop.PowerPoint.Presentation]$presentation
-    )
-
-    # 逆順でループすることで、すべてのスライドを削除
-    for ($i = $presentation.Slides.Count; $i -gt 0; $i--) {
-        $presentation.Slides.Item($i).Delete()
-    }
 }
 
 # SECTION: Function to Update Slide
@@ -97,6 +87,52 @@ function Update-Slide {
     }
 }
 
+# Function to bring a window to the foreground using its title
+function Set-WindowToForeground {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$windowTitle
+    )
+
+    Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class Win32 {
+            [DllImport("user32.dll")]
+            public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+
+            [DllImport("user32.dll")]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool SetForegroundWindow(IntPtr hWnd);
+        }
+"@
+
+    $hWnd = [Win32]::FindWindow([NullString]::Value, $windowTitle)
+
+    if ($hWnd -ne [IntPtr]::Zero) {
+        [Win32]::SetForegroundWindow($hWnd) | Out-Null
+        Start-Sleep -Milliseconds 500 # Add delay to ensure window focus
+        return $true
+    } else {
+        Write-Host "Window '$windowTitle' not found."
+        return $false
+    }
+}
+
+# Function to send key sequence
+# Function to send key sequence with individual key presses
+function Send-KeySequence {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string[]]$sequence
+    )
+
+    foreach ($key in $sequence) {
+        [System.Windows.Forms.SendKeys]::SendWait($key)
+        Start-Sleep -Milliseconds 100 # Delay between key presses
+    }
+}
+
 # SECTION: Initialize PowerPoint Application
 try {
     $powerpoint = New-Object -ComObject PowerPoint.Application
@@ -119,17 +155,22 @@ for ($i = 0; $i -lt $pptxFiles.Count; $i++) {
     Write-Host "$($i + 1). $($pptxFiles[$i].Name)"
 }
 
-do {
-    $userInput = Read-Host "Enter the number of the pptx file to use"
-    if ($userInput -match "^\d+$") {
-        $selectedIndex = [int]$userInput - 1
-        if ($selectedIndex -ge 0 -and $selectedIndex -lt $pptxFiles.Count) {
-            $masterPath = $pptxFiles[$selectedIndex].FullName
-            break
+if ($pptxFiles.Count -eq 1) {
+    $masterPath = $pptxFiles[0].FullName
+} else {
+    do {
+        $userInput = Read-Host "Enter the number of the pptx file to use"
+        if ($userInput -match "^\d+$") {
+            $selectedIndex = [int]$userInput - 1
+            if ($selectedIndex -ge 0 -and $selectedIndex -lt $pptxFiles.Count) {
+                $masterPath = $pptxFiles[$selectedIndex].FullName
+                break
+            }
         }
-    }
-    Write-Host "Invalid input. Please enter again."
-} while ($true)
+        Write-Host "Invalid input. Please enter again."
+    } while ($true)
+}
+
 
 # SECTION: Copy and Create New Presentations from Master
 try {
@@ -198,6 +239,21 @@ foreach ($presentationInfo in $presentationInfoArray) {
 }
 
 # SECTION: Save and Close Type Presentations
+
+# Activate the PowerPoint window and send key sequence
+$array = @($TYPE1, $TYPE2)
+foreach ($_ in $array) {
+    $windowTitle = "$($_).pptx - PowerPoint"
+    if (Set-WindowToForeground -windowTitle $windowTitle) {
+        # Send Alt key first, then individual keys
+        $keySequence = @("%", "f", "i", "p", "{ENTER}", "{ESC}")
+        Send-KeySequence -sequence $keySequence
+    } else {
+        Write-Error "Failed to activate window: $windowTitle"
+    }
+}
+
+# Proceed with saving presentations
 try {
     $type1Presentation.SaveAs($type1Path)
     $type2Presentation.SaveAs($type2Path)
