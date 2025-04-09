@@ -1,7 +1,7 @@
 # SECTION: Constants
 $TYPE1 = "ŽŽŒ±Œü‚¯"
 $TYPE2 = "‰^—pŒü‚¯"
-$BOTH = "ŽŽŒ±/‰^—pŒü‚¯"
+$BOTH = "—¼•û"
 
 # Add the required .NET assembly
 Add-Type -AssemblyName System.Windows.Forms
