@@ -57,10 +57,11 @@ function Update-Slide {
         [string]$presentationType
     )
 
-    $condition1 = $textBoxText -eq $TYPE2 -and $presentationType -eq $TYPE1
-    $condition2 = $textBoxText -eq $TYPE1 -and $presentationType -eq $TYPE2
+    $condition1 = $textBoxText -eq $TYPE2 -and $presentationType -eq $TYPE1 # delete the slide from type 1 presetation
+    $condition2 = $textBoxText -eq $TYPE1 -and $presentationType -eq $TYPE2 # delete the slide from type 2 presetation
+    $condition3 = $null -eq $textBoxShape # delete the slide from both presentation
 
-    if ($condition1 -or $condition2) {
+    if ($condition1 -or $condition2 -or $condition3) {
         # ÉXÉâÉCÉhÇ™ë∂ç›Ç∑ÇÈèÍçáÇÃÇ›çÌèú
         if ($slide) {
             try {
@@ -193,6 +194,7 @@ try {
 }
 
 # SECTION: Process Each Slide
+$multipleTagSlideCount = 0
 foreach ($presentationInfo in $presentationInfoArray) {
     $presentation = $presentationInfo.Presentation
     $presentationType = $presentationInfo.Type
@@ -214,11 +216,11 @@ foreach ($presentationInfo in $presentationInfoArray) {
         }
 
         if ($matchingShapes.Count -gt 1) {
-            Write-Error "Multiple textboxes for file generation flag found on page $i of master.pptx."
-            Write-Host "Press any key to continue..."
-            $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
-            Close-PowerPointAndReleaseResources -powerpoint $powerpoint -presentations $type1Presentation, $type2Presentation
-            exit
+            Write-Host "Multiple textboxes for file generation flag found on page $i of master.pptx.\nThis slide is deleted from new presentation files."
+            $textBoxShape = $null
+            $textBoxText = ""
+            $foundTextBox = $ture
+            $multipleTagSlideCount += 1
         } elseif ($matchingShapes.Count -eq 1) {
             $textBoxShape = $matchingShapes[0]
             $textBoxText = $textBoxShape.TextFrame.TextRange.Text
@@ -236,6 +238,9 @@ foreach ($presentationInfo in $presentationInfoArray) {
         # Function call to process slides
         Update-Slide -slide $slide -presentation $presentation -textBoxShape $textBoxShape -textBoxText $textBoxText -presentationType $presentationType
     }
+}
+if ($multipleTagSlideCount -gt 1) {
+    Write-Host "Caution: Multiple textboxes for file generation flag on 2 or more slides."
 }
 
 # SECTION: Save and Close Type Presentations
