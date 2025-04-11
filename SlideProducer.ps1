@@ -1,7 +1,10 @@
+# encode: shift-jis
+# windows powershell
+
 # SECTION: Constants
 $TYPE1 = "試験向け"
 $TYPE2 = "運用向け"
-$BOTH = "両方"
+$BOTH = "試験/運用"
 
 # Add the required .NET assembly
 Add-Type -AssemblyName System.Windows.Forms
@@ -50,33 +53,39 @@ function Update-Slide {
         [Parameter(Mandatory = $true)]
         $presentation,
         [Parameter(Mandatory = $true)]
-        $textBoxShape,
-        [Parameter(Mandatory = $true)]
-        [string]$textBoxText,
+        $matchingShapes,
         [Parameter(Mandatory = $true)]
         [string]$presentationType
     )
 
-    $condition1 = $textBoxText -eq $TYPE2 -and $presentationType -eq $TYPE1 # delete the slide from type 1 presetation
-    $condition2 = $textBoxText -eq $TYPE1 -and $presentationType -eq $TYPE2 # delete the slide from type 2 presetation
-    $condition3 = $null -eq $textBoxShape # delete the slide from both presentation
+    # Delete the slide
+    $textBoxText = ""
+    if ($matchingShapes.Count -gt 1) {
+        $condition3 = $true
+    } else {
+        $condition3 = $false
+    }
+
+    if ($matchingShapes.Count -eq 1) {
+        $textBoxText = $matchingShapes[0].TextFrame.TextRange.Text
+    }
+    $condition1 = $textBoxText -eq $TYPE2 -and $presentationType -eq $TYPE1
+    $condition2 = $textBoxText -eq $TYPE1 -and $presentationType -eq $TYPE2
 
     if ($condition1 -or $condition2 -or $condition3) {
-        # スライドが存在する場合のみ削除
-        if ($slide) {
-            try {
-                $slide.Delete()
-            } catch {
-                Write-Error "Failed to delete slide: $($_.Exception.Message)"
-            }
+        try {
+            $slide.Delete()
+            return
+        } catch {
+            Write-Error "Failed to delete slide: $($_.Exception.Message)"
         }
     }
 
-    # テキストボックスを削除
-    if ($textBoxShape) {
+    # Delete the text boxes
+    foreach ($matchingShape in $matchingShapes) {
         for ($i = $slide.Shapes.Count; $i -gt 0; $i--) {
             $shape = $slide.Shapes.Item($i)
-            if ($shape.Name -eq $textBoxShape.Name) {
+            if ($shape.Name -eq $matchingShape.Name) {
                 try {
                     $shape.Delete()
                     break
@@ -175,8 +184,10 @@ if ($pptxFiles.Count -eq 1) {
 
 # SECTION: Copy and Create New Presentations from Master
 try {
-    $type1Path = Join-Path -Path (Get-Location) -ChildPath "$TYPE1.pptx"
-    $type2Path = Join-Path -Path (Get-Location) -ChildPath "$TYPE2.pptx"
+    $fileNameWithoutExtension = [System.IO.Path]::GetFileNameWithoutExtension((Split-Path $masterPath -Leaf))
+
+    $type1Path = Join-Path -Path (Get-Location) -ChildPath "$($fileNameWithoutExtension)_$($TYPE1).pptx"
+    $type2Path = Join-Path -Path (Get-Location) -ChildPath "$($fileNameWithoutExtension)_$($TYPE2).pptx"
 
     Copy-Item -Path $masterPath -Destination $type1Path -Force
     Copy-Item -Path $masterPath -Destination $type2Path -Force
@@ -194,7 +205,6 @@ try {
 }
 
 # SECTION: Process Each Slide
-$multipleTagSlideCount = 0
 foreach ($presentationInfo in $presentationInfoArray) {
     $presentation = $presentationInfo.Presentation
     $presentationType = $presentationInfo.Type
@@ -203,9 +213,9 @@ foreach ($presentationInfo in $presentationInfoArray) {
 
         # SECTION: Find Target Textbox
         $textBoxText = ""
-        $textBoxShape = $null
-        $foundTextBox = $false
         $matchingShapes = @()
+        $matchingShapes = @()
+        $foundTextBox = $false
         foreach ($shape in $slide.Shapes) {
             if ($shape.HasTextFrame -and $shape.TextFrame.HasText) {
                 $textBoxText = $shape.TextFrame.TextRange.Text
@@ -215,18 +225,10 @@ foreach ($presentationInfo in $presentationInfoArray) {
             }
         }
 
-        if ($matchingShapes.Count -gt 1) {
-            Write-Host "Multiple textboxes for file generation flag found on page $i of master.pptx.\nThis slide is deleted from new presentation files."
-            $textBoxShape = $null
-            $textBoxText = ""
-            $foundTextBox = $ture
-            $multipleTagSlideCount += 1
-        } elseif ($matchingShapes.Count -eq 1) {
-            $textBoxShape = $matchingShapes[0]
-            $textBoxText = $textBoxShape.TextFrame.TextRange.Text
+        if ($matchingShapes.Count -gt 0) {
             $foundTextBox = $true
         }
-
+        
         if (-not $foundTextBox) {
             Write-Error "Textbox for file generation flag not found on page $i of master.pptx."
             Write-Host "Press any key to continue..."
@@ -234,21 +236,18 @@ foreach ($presentationInfo in $presentationInfoArray) {
             Close-PowerPointAndReleaseResources -powerpoint $powerpoint -presentations $type1Presentation, $type2Presentation
             exit
         }
-
+        
         # Function call to process slides
-        Update-Slide -slide $slide -presentation $presentation -textBoxShape $textBoxShape -textBoxText $textBoxText -presentationType $presentationType
+        Update-Slide -slide $slide -presentation $presentation -matchingShapes $matchingShapes -presentationType $presentationType
     }
-}
-if ($multipleTagSlideCount -gt 1) {
-    Write-Host "Caution: Multiple textboxes for file generation flag on 2 or more slides."
 }
 
 # SECTION: Save and Close Type Presentations
 
 # Activate the PowerPoint window and send key sequence
-$array = @($TYPE1, $TYPE2)
+$array = @((Split-Path $type1Path -Leaf), (Split-Path $type2Path -Leaf))
 foreach ($_ in $array) {
-    $windowTitle = "$($_).pptx - PowerPoint"
+    $windowTitle = "$($_) - PowerPoint"
     if (Set-WindowToForeground -windowTitle $windowTitle) {
         # Send Alt key first, then individual keys
         $keySequence = @("%", "f", "i", "p", "{ENTER}", "{ESC}")
